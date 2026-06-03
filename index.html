@@ -597,8 +597,8 @@
         const VIP_PASSWORD = "karabit123";
 
         // ================= NGROK URLS =================
-       const BACKEND_URL = "https://tender-donkeys-listen.loca.lt/karabit-clip/process.php";
-    const ZIP_URL_BASE = "https://tender-donkeys-listen.loca.lt/karabit-clip/zip.php?job_id=";
+        const BACKEND_URL = "https://tender-donkeys-listen.loca.lt/karabit-clip/process.php";
+        const ZIP_URL_BASE = "https://tender-donkeys-listen.loca.lt/karabit-clip/zip.php?job_id=";
         
         // Elemen DOM
         const loginView = document.getElementById('loginView');
@@ -744,7 +744,7 @@
 
                 const response = await fetch(BACKEND_URL, {
                     method: 'POST',
-                    headers: { 'ngrok-skip-browser-warning': 'true' },
+                    headers: { 'Bypass-Tunnel-Reminder': 'true' },
                     body: formData
                 });
 
@@ -762,7 +762,7 @@
                 }
             } catch (error) {
                 clearInterval(progressInterval);
-                alert("Gagal terhubung ke Engine. Pastikan Ngrok RDP menyala.");
+                alert("Gagal terhubung ke Engine. Pastikan LocalTunnel RDP sedang aktif.");
                 resetClipTool();
             }
         });
