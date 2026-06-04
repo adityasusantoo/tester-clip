@@ -815,9 +815,6 @@
                 if(prog < 90) { prog += 1.5; bar.style.width = prog + '%'; }
             }, 1000);
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 600000); // Timeout 10 menit
-
             try {
                 const formData = new FormData();
                 formData.append('url', urlInput);
@@ -825,54 +822,59 @@
                 const response = await fetch(BACKEND_URL, {
                     method: 'POST',
                     headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                    body: formData,
-                    signal: controller.signal
+                    body: formData
                 });
-
-                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const data = await response.json();
-                console.log("Response:", data);
+                const initData = await response.json();
+                console.log("Response Awal:", initData);
                 
-                clearInterval(progressInterval);
+                if(initData.status === 'processing') {
+                    currentJobId = initData.job_id;
+                    
+                    const checkInterval = setInterval(async () => {
+                        try {
+                            const checkUrl = BACKEND_URL.replace('process.php', `check_status.php?job_id=${currentJobId}`);
+                            const checkRes = await fetch(checkUrl, {
+                                headers: { 'Bypass-Tunnel-Reminder': 'true' }
+                            });
+                            
+                            const checkData = await checkRes.json();
+                            console.log("Cek Status Engine:", checkData.status);
 
-                if(data.status === 'success') {
-                    console.log("Karabit AI Engine Success");
-                    bar.style.width = '100%';
-                    currentJobId = data.job_id;
-                    renderClips(data.clips);
-                    setTimeout(() => showAppSection(false, false, true), 800);
-                    showToast('Berhasil mengekstrak klip viral!', 'success');
+                            if(checkData.status === 'success') {
+                                clearInterval(checkInterval);
+                                clearInterval(progressInterval);
+                                
+                                bar.style.width = '100%';
+                                renderClips(checkData.clips);
+                                setTimeout(() => showAppSection(false, false, true), 800);
+                                showToast('Berhasil mengekstrak klip viral!', 'success');
+                                
+                            } else if (checkData.status === 'error') {
+                                clearInterval(checkInterval);
+                                clearInterval(progressInterval);
+                                showToast("Error Engine: " + (checkData.message || "Terjadi kesalahan."), "error");
+                                resetClipTool();
+                            }
+                        } catch(err) {
+                            console.error("Gagal mengecek status:", err);
+                        }
+                    }, 5000);
+
                 } else {
-                    console.log("Karabit AI Engine Failed");
-                    showToast("Error Engine: " + (data.message || "Terjadi kesalahan yang tidak diketahui."), "error");
+                    clearInterval(progressInterval);
+                    showToast("Error Engine: " + (initData.message || "Gagal memulai."), "error");
                     resetClipTool();
                 }
+
             } catch (error) {
-                console.log("Karabit AI Engine Failed");
                 clearInterval(progressInterval);
                 console.error("Fetch Error:", error);
-
-                if (error.name === 'AbortError') {
-                    showToast("Request Timeout: Server membutuhkan waktu terlalu lama (lebih dari 10 menit).", "error");
-                } else if (error.name === 'SyntaxError' || error instanceof SyntaxError) {
-                    showToast("Error Parsing: Server mengembalikan format data yang tidak valid (bukan JSON).", "error");
-                } else {
-                    showToast(
-                        "Koneksi gagal.\n\n" +
-                        "Kemungkinan:\n" +
-                        "1. LocalTunnel mati\n" +
-                        "2. Server/Backend offline\n" +
-                        "3. Masalah jaringan\n\n" +
-                        "Detail: " + error.message,
-                        "error"
-                    );
-                }
-
+                showToast("Koneksi gagal. Pastikan Tunnel URL aktif. Detail: " + error.message, "error");
                 resetClipTool();
             }
         });
