@@ -583,8 +583,8 @@
         // Supaya link tidak berubah-ubah terus, di CMD RDP jalankan perintah: 
         // lt --port 80 --subdomain karabit-clipper
         
-        const BACKEND_URL = "https://karabit-clipper.loca.lt/karabit-clip/process.php";
-        const ZIP_URL_BASE = "https://karabit-clipper.loca.lt/karabit-clip/zip.php?job_id=";
+        const BACKEND_URL = "https://reasonably-address-circle-skirt.trycloudflare.com/karabit-clip/process.php";
+const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/karabit-clip/zip.php?job_id=";
         
         // Elemen DOM
         const loginView = document.getElementById('loginView');
@@ -826,9 +826,8 @@
                 const formData = new FormData();
                 formData.append('url', urlInput);
 
-                const response = await fetch(BACKEND_URL, {
+               const response = await fetch(BACKEND_URL, {
                     method: 'POST',
-                    headers: { 'Bypass-Tunnel-Reminder': 'true' },
                     body: formData,
                     signal: controller.signal
                 });
