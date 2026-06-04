@@ -815,6 +815,9 @@
                 if(prog < 90) { prog += 1.5; bar.style.width = prog + '%'; }
             }, 1000);
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 600000); // Timeout 10 menit
+
             try {
                 const formData = new FormData();
                 formData.append('url', urlInput);
@@ -822,15 +825,19 @@
                 const response = await fetch(BACKEND_URL, {
                     method: 'POST',
                     headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
 
-                const responseText = await response.text();
-                
-                console.log("SERVER RESPONSE:");
-                console.log(responseText);
+                clearTimeout(timeoutId);
 
-                const data = JSON.parse(responseText);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log("Response:", data);
+                
                 clearInterval(progressInterval);
 
                 if(data.status === 'success') {
@@ -842,32 +849,36 @@
                     showToast('Berhasil mengekstrak klip viral!', 'success');
                 } else {
                     console.log("Karabit AI Engine Failed");
-                    showToast("Error Engine: " + data.message, "error");
+                    showToast("Error Engine: " + (data.message || "Terjadi kesalahan yang tidak diketahui."), "error");
                     resetClipTool();
                 }
             } catch (error) {
                 console.log("Karabit AI Engine Failed");
                 clearInterval(progressInterval);
+                console.error("Fetch Error:", error);
 
-                console.error(error);
-
-                showToast(
-                    "Koneksi gagal.\n\n" +
-                    "Kemungkinan:\n" +
-                    "1. LocalTunnel mati\n" +
-                    "2. process.php error\n" +
-                    "3. Apache belum berjalan\n" +
-                    "4. URL tunnel berubah\n\n" +
-                    "Tekan F12 > Console untuk melihat detail.",
-                    "error"
-                );
+                if (error.name === 'AbortError') {
+                    showToast("Request Timeout: Server membutuhkan waktu terlalu lama (lebih dari 10 menit).", "error");
+                } else if (error.name === 'SyntaxError' || error instanceof SyntaxError) {
+                    showToast("Error Parsing: Server mengembalikan format data yang tidak valid (bukan JSON).", "error");
+                } else {
+                    showToast(
+                        "Koneksi gagal.\n\n" +
+                        "Kemungkinan:\n" +
+                        "1. LocalTunnel mati\n" +
+                        "2. Server/Backend offline\n" +
+                        "3. Masalah jaringan\n\n" +
+                        "Detail: " + error.message,
+                        "error"
+                    );
+                }
 
                 resetClipTool();
             }
         });
 
         function renderClips(clips) {
-            document.getElementById('resultSubtitle').innerText = `Ditemukan ${clips.length} klip siap upload (File terhapus dlm 15 mnt).`;
+            document.getElementById('resultSubtitle').innerText = `Ditemukan ${clips.length} klip siap upload (File otomatis dihapus setelah 30 menit).`;
             clipsGrid.innerHTML = '';
 
             clips.forEach(clip => {
@@ -911,5 +922,3 @@
     </script>
 </body>
 </html>
-
-```
