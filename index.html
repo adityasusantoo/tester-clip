@@ -578,13 +578,9 @@
         const VIP_USERNAME = "tester";
         const VIP_PASSWORD = "karabit123";
 
-        // ================= API ENDPOINT (LOCALTUNNEL UNTUK VERCEL) =================
-        // ⚠️ PENTING: Ganti URL di bawah ini dengan URL LocalTunnel kamu yang sedang aktif di RDP!
-        // Supaya link tidak berubah-ubah terus, di CMD RDP jalankan perintah: 
-        // lt --port 80 --subdomain karabit-clipper
-        
+        // ================= API ENDPOINT (CLOUDFLARE TUNNEL) =================
         const BACKEND_URL = "https://reasonably-address-circle-skirt.trycloudflare.com/karabit-clip/process.php";
-const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/karabit-clip/zip.php?job_id=";
+        const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/karabit-clip/zip.php?job_id=";
         
         // Elemen DOM
         const loginView = document.getElementById('loginView');
@@ -655,8 +651,6 @@ const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/
             const badgeMobile = document.getElementById('backendStatusBadgeMobile');
             
             try {
-                // Gunakan mode no-cors jika fetch gagal karena CORS saat nge-ping, 
-                // namun fetch standard cukup untuk mengetes reachability server.
                 const res = await fetch(BACKEND_URL, { method: 'OPTIONS' });
                 if (res.ok || res.status === 405 || res.status === 200) {
                     const onlineState = `
@@ -790,7 +784,7 @@ const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/
             if(reset) resetClipTool();
         }
 
-        // ================= LOGIC MESIN POTONG VIDEO =================
+        // ================= LOGIC MESIN POTONG VIDEO ASYNC =================
         function showAppSection(idle, proc, succ) {
             secIdle.classList.toggle('hidden-view', !idle);
             secProcessing.classList.toggle('hidden-view', !proc);
@@ -803,6 +797,41 @@ const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/
             if(progressInterval) clearInterval(progressInterval);
         }
 
+        // Fungsi Memaksa Download di iOS & Android Melalui JavaScript Blob
+        async function forceDownload(url, filename, btnElem) {
+            const originalContent = btnElem.innerHTML;
+            try {
+                btnElem.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-lg"></i> Mengunduh...';
+                btnElem.classList.add('opacity-75', 'cursor-not-allowed');
+                btnElem.disabled = true;
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Gagal mengambil data video.");
+                
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = blobUrl;
+                a.download = filename;
+                
+                document.body.appendChild(a);
+                a.click();
+                
+                window.URL.revokeObjectURL(blobUrl);
+                document.body.removeChild(a);
+                showToast('Video sukses tersimpan!', 'success');
+            } catch (error) {
+                console.error("Gagal force download:", error);
+                window.open(url, '_blank'); // Backup plan jika browser memblokir blob
+            } finally {
+                btnElem.innerHTML = originalContent;
+                btnElem.classList.remove('opacity-75', 'cursor-not-allowed');
+                btnElem.disabled = false;
+            }
+        }
+
         generateForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const urlInput = document.getElementById('youtubeUrl').value;
@@ -811,71 +840,67 @@ const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/
             console.log("Karabit AI Engine Started");
             showAppSection(false, true, false);
             
-            let prog = 10;
+            let prog = 5;
             const bar = document.getElementById('progressBar');
             bar.style.width = prog + '%';
             
+            // Animasi progress bar melambat di ujung agar stabil
             progressInterval = setInterval(() => {
-                if(prog < 90) { prog += 1.5; bar.style.width = prog + '%'; }
-            }, 1000);
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 600000); // Timeout 10 menit
+                if(prog < 99) { prog += (99 - prog) * 0.05; bar.style.width = prog + '%'; }
+            }, 5000);
 
             try {
                 const formData = new FormData();
                 formData.append('url', urlInput);
 
-               const response = await fetch(BACKEND_URL, {
+                // Langkah 1: Kirim data antrean ke RDP (Dibalas instan oleh PHP)
+                const response = await fetch(BACKEND_URL, {
                     method: 'POST',
-                    body: formData,
-                    signal: controller.signal
+                    body: formData
                 });
 
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-                console.log("Response:", data);
                 
-                clearInterval(progressInterval);
-
-                if(data.status === 'success') {
-                    console.log("Karabit AI Engine Success");
-                    bar.style.width = '100%';
+                if(data.status === 'processing') {
                     currentJobId = data.job_id;
-                    renderClips(data.clips);
-                    setTimeout(() => showAppSection(false, false, true), 800);
-                    showToast('Berhasil mengekstrak klip viral!', 'success');
+                    
+                    // Langkah 2: Lakukan Polling (Ping status RDP tiap 5 detik)
+                    const poll = setInterval(async () => {
+                        try {
+                            const checkUrl = BACKEND_URL.replace('process.php', 'check_status.php') + '?job_id=' + currentJobId;
+                            const res = await fetch(checkUrl);
+                            const statusData = await res.json();
+                            
+                            // Ubah teks loading secara dinamis mengikuti kinerja RDP asli
+                            const uiText = document.querySelector('#app-processing p');
+                            if(uiText) uiText.innerText = statusData.message;
+
+                            if (statusData.status === 'success') {
+                                clearInterval(poll);
+                                clearInterval(progressInterval);
+                                bar.style.width = '100%';
+                                renderClips(statusData.clips);
+                                setTimeout(() => showAppSection(false, false, true), 800);
+                                showToast('Berhasil mengekstrak klip viral!', 'success');
+                            } else if (statusData.status === 'error') {
+                                clearInterval(poll);
+                                clearInterval(progressInterval);
+                                showToast("Error Engine: " + statusData.message, "error");
+                                resetClipTool();
+                            }
+                        } catch (e) {
+                            console.log("Mengantre... RDP sedang sibuk bekerja.");
+                        }
+                    }, 5000);
+                    
                 } else {
-                    console.log("Karabit AI Engine Failed");
-                    showToast("Error Engine: " + (data.message || "Terjadi kesalahan yang tidak diketahui."), "error");
+                    showToast("Error Engine: " + (data.message || "Gagal inisialisasi."), "error");
                     resetClipTool();
                 }
             } catch (error) {
-                console.log("Karabit AI Engine Failed");
                 clearInterval(progressInterval);
-                console.error("Fetch Error:", error);
-
-                if (error.name === 'AbortError') {
-                    showToast("Request Timeout: Server membutuhkan waktu terlalu lama (lebih dari 10 menit).", "error");
-                } else if (error.name === 'SyntaxError' || error instanceof SyntaxError) {
-                    showToast("Error Parsing: Server mengembalikan format data yang tidak valid (bukan JSON).", "error");
-                } else {
-                    showToast(
-                        "Koneksi gagal.\n\n" +
-                        "Kemungkinan:\n" +
-                        "1. LocalTunnel mati\n" +
-                        "2. Server/Backend offline\n" +
-                        "3. Masalah jaringan\n\n" +
-                        "Detail: " + error.message,
-                        "error"
-                    );
-                }
-
+                showToast("Gagal menghubungi server utama (Cloudflare Offline).", "error");
                 resetClipTool();
             }
         });
@@ -907,9 +932,9 @@ const ZIP_URL_BASE = "https://reasonably-address-circle-skirt.trycloudflare.com/
                             <span class="font-mono">${clip.size}</span>
                             <span class="bg-white/5 px-2 py-0.5 rounded border border-white/5">1080p</span>
                         </div>
-                        <a href="${clip.file_url}" download class="w-full py-2.5 sm:py-3 rounded-xl bg-white/5 hover:bg-primary border border-white/10 hover:border-transparent transition-all flex items-center justify-center gap-2 text-sm font-bold text-white">
+                        <button onclick="forceDownload('${clip.file_url}', 'Karabit_${clip.title}.mp4', this)" class="w-full py-2.5 sm:py-3 rounded-xl bg-white/5 hover:bg-primary border border-white/10 hover:border-transparent transition-all flex items-center justify-center gap-2 text-sm font-bold text-white">
                             <i class="ph-bold ph-download-simple text-lg"></i> Unduh Clip
-                        </a>
+                        </button>
                     </div>
                 </div>`;
                 clipsGrid.innerHTML += card;
